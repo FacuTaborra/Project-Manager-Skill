@@ -1,0 +1,41 @@
+"""Typed exceptions surfaced to the CLI layer.
+
+Exit codes:
+    0 — success
+    1 — fatal error (PMError, ConfigError, ProviderError without exit override)
+    2 — needs user choice (NeedsChoice; payload is JSON-printed to stdout)
+    3 — cache invalid / requires `setup --force`
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_NEEDS_CHOICE = 2
+EXIT_CACHE_INVALID = 3
+
+
+class PMError(Exception):
+    """Base — any recoverable error surfaced to the user."""
+
+    def __init__(self, message: str, exit_code: int = EXIT_ERROR) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+class ConfigError(PMError):
+    """Configuration is missing or malformed (PAK file, env vars, paths)."""
+
+
+class ProviderError(PMError):
+    """An issue-tracker adapter (Linear, GitHub, ...) failed."""
+
+
+class NeedsChoice(PMError):
+    """Caller must pick from options. `payload` is JSON-printed to stdout."""
+
+    def __init__(self, message: str, payload: dict[str, Any]) -> None:
+        super().__init__(message, exit_code=EXIT_NEEDS_CHOICE)
+        self.payload = payload

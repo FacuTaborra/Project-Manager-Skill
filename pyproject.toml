@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "claude-pm-skill"
+version = "0.1.0"
+description = "Linear-backed Product Manager skill for Claude Code, with extensible provider architecture."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Facundo Taborra" }]
+keywords = ["claude", "claude-code", "linear", "pm", "issue-tracker", "skill"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[project.scripts]
+pm = "claude_pm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/FacuTaborra/claude-pm-skill"
+Issues = "https://github.com/FacuTaborra/claude-pm-skill/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/claude_pm"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["pm.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+files = ["src/claude_pm"]

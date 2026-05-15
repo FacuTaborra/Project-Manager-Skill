@@ -1,0 +1,76 @@
+"""Generic stdlib HTTP client for provider adapters."""
+
+from __future__ import annotations
+
+import json
+import time
+import urllib.error
+import urllib.request
+from typing import Any
+
+from ...exceptions import ProviderError
+
+
+class HttpClient:
+    """Minimal POST-JSON client built on urllib. Stateless, one per adapter.
+
+    Designed for GraphQL/REST APIs that take JSON bodies and return JSON. Single
+    retry on transient errors (timeouts, 5xx) — providers can layer their own
+    logic on top.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout: int = 30,
+        max_retries: int = 1,
+    ) -> None:
+        self.url = url
+        self.headers = headers
+        self.timeout = timeout
+        self.max_retries = max_retries
+
+    def post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.url,
+            data=body,
+            headers={**self.headers, "Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        last_err: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    raw = resp.read().decode("utf-8")
+                    parsed = json.loads(raw)
+                    if not isinstance(parsed, dict):
+                        raise ProviderError(f"Unexpected response shape: {type(parsed).__name__}")
+                    return parsed
+            except urllib.error.HTTPError as e:
+                detail = _safe_read(e)
+                if e.code in (401, 403):
+                    raise ProviderError(
+                        f"Authentication rejected (HTTP {e.code}). "
+                        f"Check your API key and scopes. Detail: {detail[:200]}"
+                    ) from e
+                if e.code >= 500 and attempt < self.max_retries:
+                    last_err = e
+                    time.sleep(1)
+                    continue
+                raise ProviderError(f"HTTP {e.code}: {detail[:200]}") from e
+            except urllib.error.URLError as e:
+                if attempt < self.max_retries:
+                    last_err = e
+                    time.sleep(1)
+                    continue
+                raise ProviderError(f"Network error: {e}") from e
+        raise ProviderError(f"Request failed after retries: {last_err}")
+
+
+def _safe_read(err: urllib.error.HTTPError) -> str:
+    try:
+        return err.read().decode("utf-8", errors="replace")
+    except Exception:
+        return ""

@@ -27,11 +27,14 @@ FALLBACK_CACHE_ROOT = Path.home() / ".config" / "claude-pm-skill"
 # Keep old name as alias so external code importing it doesn't break.
 DEFAULT_PAK_FILE = DEFAULT_LINEAR_PAK_FILE
 
+# Resolve symlinks so paths work whether the skill is run directly or via symlink.
+_SKILL_ROOT = Path(__file__).resolve().parent.parent.parent
+
 # .env in the repo root
-_REPO_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+_REPO_ENV_FILE = _SKILL_ROOT / ".env"
 
 # Central projects config (one section per repo, gitignored)
-_PROJECTS_FILE = Path(__file__).parent.parent.parent / "projects.pm"
+_PROJECTS_FILE = _SKILL_ROOT / "projects.pm"
 
 
 def _read_projects_file(repo_name: str) -> PmFileConfig:

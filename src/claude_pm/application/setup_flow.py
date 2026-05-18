@@ -38,6 +38,9 @@ class SetupService:
     def ensure(self, options: SetupOptions | None = None) -> Cache:
         opts = options or SetupOptions()
 
+        if self.config.pm_file.projects:
+            return self._setup_from_pm_file(opts)
+
         cache_complete = (
             self.cache.team_id
             and self.cache.projects
@@ -46,9 +49,6 @@ class SetupService:
         )
         if not opts.force and cache_complete:
             return self.cache
-
-        if self.config.pm_file.projects:
-            return self._setup_from_pm_file(opts)
 
         team_id = self._resolve_team(opts)
         project = self._resolve_project(team_id, opts)
@@ -63,6 +63,14 @@ class SetupService:
 
     def _setup_from_pm_file(self, opts: SetupOptions) -> Cache:
         pm = self.config.pm_file
+
+        # Use cache if it already has exactly the projects declared in pm_file
+        if not opts.force and self.cache.team_id and self.cache.state_ids and self.cache.is_fresh():
+            cached_names = {p["name"].lower() for p in self.cache.projects}
+            pm_names = {n.lower() for n in pm.projects}
+            if cached_names == pm_names:
+                return self.cache
+
         teams = self.provider.list_teams()
         if not teams:
             raise PMError("No teams/spaces found in this workspace.")

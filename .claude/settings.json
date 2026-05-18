@@ -29,10 +29,12 @@
       "WebFetch(domain:clickup.com)",
       "WebFetch(domain:developer.clickup.com)",
       "Bash(PM_PROVIDER=clickup python3 pm.py list-teams)",
-      "Bash(PM_PROVIDER=clickup python3 pm.py list-projects --team-id 90175692660)"
+      "Bash(PM_PROVIDER=clickup python3 pm.py list-projects --team-id 90175692660)",
+      "Bash(rm \"/c/Workspace/claude-obsidian-memory/proyectos/cahpsa-etl/.linear-cache.json\")"
     ],
     "additionalDirectories": [
-      "C:\\Users\\facun"
+      "C:\\Users\\facun",
+      "C:\\Workspace\\claude-obsidian-memory\\proyectos\\cahpsa-etl"
     ]
   }
 }

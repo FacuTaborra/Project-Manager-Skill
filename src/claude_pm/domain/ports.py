@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import Issue, IssueDraft, Label, Project, State, Team, User
+from .models import Issue, IssueDraft, IssueUpdate, Label, Project, State, Team, User
 
 
 class IssueProvider(Protocol):
@@ -23,8 +23,8 @@ class IssueProvider(Protocol):
         """List all teams the authenticated user belongs to."""
         ...
 
-    def create_team(self, name: str) -> Team:
-        """Create a new team in the workspace."""
+    def list_projects(self, team_id: str | None = None) -> list[Project]:
+        """List projects, optionally filtered by team."""
         ...
 
     def find_projects(self, name_query: str) -> list[Project]:
@@ -57,6 +57,10 @@ class IssueProvider(Protocol):
 
     def create_issue(self, draft: IssueDraft) -> Issue:
         """Create a new issue from the given draft."""
+        ...
+
+    def update_issue(self, update: IssueUpdate) -> Issue:
+        """Update an existing issue. Only fields set (not None) are changed."""
         ...
 
 

@@ -15,10 +15,12 @@ from typing import Any
 
 from ...domain.ports import IssueProvider
 from ...exceptions import ConfigError
+from .clickup import ClickUpProvider
 from .linear import LinearProvider
 
 PROVIDERS: dict[str, Callable[..., IssueProvider]] = {
     "linear": LinearProvider,
+    "clickup": ClickUpProvider,
 }
 
 

@@ -1,8 +1,8 @@
 # claude-pm-skill
 
-[![CI](https://github.com/FacuTaborra/claude-pm-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/FacuTaborra/claude-pm-skill/actions/workflows/ci.yml)
+[![CI](https://github.com/FacuTaborra/product-manager-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/FacuTaborra/product-manager-skill/actions/workflows/ci.yml)
 
-A Claude Code skill that turns Claude into your project's **Product Manager**, backed by Linear (with an extensible provider architecture for GitHub Issues, Jira, etc.).
+A Claude Code skill that turns Claude into your project's **Project Manager**, backed by Linear (with an extensible provider architecture for GitHub Issues, Jira, etc.).
 
 Two modes:
 
@@ -26,7 +26,7 @@ Designed to work in **any repo**, with or without an Obsidian vault for project 
 ### Linux / macOS / Git Bash on Windows
 
 ```bash
-git clone https://github.com/<your-username>/claude-pm-skill.git
+git clone https://github.com/FacuTaborra/product-manager-skill.git
 cd claude-pm-skill
 ./install.sh
 ```
@@ -34,12 +34,26 @@ cd claude-pm-skill
 ### Windows (native PowerShell)
 
 ```powershell
-git clone https://github.com/<your-username>/claude-pm-skill.git
+git clone https://github.com/FacuTaborra/product-manager-skill.git
 cd claude-pm-skill
 .\install.ps1
 ```
 
 The installer copies `SKILL.md` and `pm.py` to `~/.claude/skills/pm/` and creates a `~/.claude/secrets/linear-pak.env` from the example if it doesn't exist.
+
+### Optional: add the `pm` shell alias
+
+To run `pm doctor` instead of the full `python3 ~/.claude/skills/pm/pm.py doctor`:
+
+**Git Bash / Linux / macOS** — add to `~/.bashrc` or `~/.zshrc`:
+```bash
+alias pm='python3 ~/.claude/skills/pm/pm.py'
+```
+
+**PowerShell** — add to your `$PROFILE`:
+```powershell
+function pm { python3 "$HOME/.claude/skills/pm/pm.py" @args }
+```
 
 ---
 
@@ -61,6 +75,8 @@ The installer copies `SKILL.md` and `pm.py` to `~/.claude/skills/pm/` and create
 Verify everything works:
 
 ```bash
+pm doctor
+# or without the alias:
 python3 ~/.claude/skills/pm/pm.py doctor
 ```
 
@@ -123,11 +139,11 @@ If no Linear project matches the repo name, the skill tells you. Either:
 
 - Re-run setup to create one:
   ```bash
-  python3 ~/.claude/skills/pm/pm.py setup --create-project
+  pm setup --create-project
   ```
 - Or point the skill at an existing project:
   ```bash
-  python3 ~/.claude/skills/pm/pm.py setup --project-id <linear-project-id>
+  pm setup --project-id <linear-project-id>
   ```
 
 ### Other developers on the team
@@ -154,7 +170,7 @@ export LINEAR_PROJECT_ID=<uuid-of-the-linear-project>
 Or override per-call:
 
 ```bash
-python3 ~/.claude/skills/pm/pm.py setup --project-id <uuid>
+pm setup --project-id <uuid>
 ```
 
 ### Assigning issues to teammates
@@ -163,7 +179,7 @@ Tell Claude: *"propose this task and assign it to juan@team.com"*. The skill res
 
 ### Using your team's labels
 
-If your team uses Linear labels (`feature`, `bug`, `tech-debt`, etc.), tell Claude: *"…with the `feature` and `backend` labels"*. Labels must **already exist** in the team — the skill won't auto-create them (avoids typos becoming new labels). Run `python3 ~/.claude/skills/pm/pm.py list-labels` to see what's available.
+If your team uses Linear labels (`feature`, `bug`, `tech-debt`, etc.), tell Claude: *"…with the `feature` and `backend` labels"*. Labels must **already exist** in the team — the skill won't auto-create them (avoids typos becoming new labels). Run `pm list-labels` to see what's available.
 
 ### Security
 
@@ -201,7 +217,7 @@ The PAK file is missing or has a malformed line. Run `pm.py doctor` to see where
 Your Linear workspace has more than one team. Run `pm.py list-teams` to see them, then:
 
 ```bash
-python3 ~/.claude/skills/pm/pm.py setup --team-id <id>
+pm setup --team-id <id>
 ```
 
 Or set `LINEAR_TEAM_ID` in your shell profile.
@@ -221,7 +237,7 @@ Check that the email matches the one Linear has for that user. Use `pm.py resolv
 ### Cache seems stale
 
 ```bash
-python3 ~/.claude/skills/pm/pm.py setup --force
+pm setup --force
 ```
 
 This re-discovers team, project, and state IDs from Linear.

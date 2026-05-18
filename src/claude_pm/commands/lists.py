@@ -38,6 +38,23 @@ def run_list_labels(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def run_list_projects(args: argparse.Namespace) -> int:
+    config = Config.load(args.repo_name)
+    provider = build_provider(config)
+    team_id = getattr(args, "team_id", None)
+    projects = provider.list_projects(team_id)
+    print_json({"projects": [{"id": p.id, "name": p.name, "state": p.state, "url": p.url} for p in projects]})
+    return EXIT_OK
+
+
+def run_create_project(args: argparse.Namespace) -> int:
+    config = Config.load(args.repo_name)
+    provider = build_provider(config)
+    project = provider.create_project(args.name, args.team_id)
+    print_json({"project": {"id": project.id, "name": project.name}})
+    return EXIT_OK
+
+
 def run_create_team(args: argparse.Namespace) -> int:
     config = Config.load(args.repo_name)
     provider = build_provider(config)

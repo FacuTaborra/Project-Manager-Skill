@@ -9,7 +9,27 @@
       "Bash(python3 ~/.claude/skills/pm/pm.py create-team --help)",
       "Bash(./install.sh)",
       "Bash(python3 ~/.claude/skills/pm/pm.py list-teams)",
-      "Bash(mypy)"
+      "Bash(mypy)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); mcps=d.get\\('mcpServers',{}\\); print\\(json.dumps\\(mcps.get\\('linear', mcps.get\\('Linear', {}\\)\\), indent=2\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(list\\(d.get\\('mcpServers',{}\\).keys\\(\\)\\), indent=2\\)\\)\")",
+      "Bash(python3 -m json.tool)",
+      "PowerShell(Get-ChildItem \"$env:APPDATA\\\\Claude\\\\\" -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime)",
+      "Read(//c/Workspace/claude-pm-skill/.claude//**)",
+      "Read(//c/Workspace/claude-pm-skill/.claude/**)",
+      "Bash(python3 ~/.claude/skills/pm/pm.py briefing --team-id a0f87881-4a72-40df-81ae-b2f3304649f5)",
+      "Bash(python3 ~/.claude/skills/pm/pm.py setup --team-id a0f87881-4a72-40df-81ae-b2f3304649f5)",
+      "Bash(python3 ~/.claude/skills/pm/pm.py --help)",
+      "Edit(~/.claude/skills/pm/**)",
+      "Bash(python3 ~/.claude/skills/pm/pm.py list-projects)",
+      "Bash(python3 ~/.claude/skills/pm/pm.py list-projects --team-id a0f87881-4a72-40df-81ae-b2f3304649f5)",
+      "Bash(npx ctx7@latest library clickup \"list spaces tasks REST API authentication\")",
+      "Bash(npx ctx7@latest docs /llmstxt/developer_clickup_llms_txt \"list spaces list tasks create task status authentication token\")",
+      "Bash(npx ctx7@latest docs /developer_clickup_llms_txt \"list spaces list tasks create task status authentication token\")",
+      "Bash(npx ctx7@latest docs /websites/developer_clickup_reference \"list spaces list tasks create task authentication token\")",
+      "WebFetch(domain:clickup.com)",
+      "WebFetch(domain:developer.clickup.com)",
+      "Bash(PM_PROVIDER=clickup python3 pm.py list-teams)",
+      "Bash(PM_PROVIDER=clickup python3 pm.py list-projects --team-id 90175692660)"
     ],
     "additionalDirectories": [
       "C:\\Users\\facun"

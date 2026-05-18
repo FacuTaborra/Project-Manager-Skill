@@ -16,6 +16,8 @@ class Team:
 class Project:
     id: str
     name: str
+    state: str | None = None
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,16 @@ class IssueDraft:
     priority: int | None = None
     assignee_id: str | None = None
     label_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IssueUpdate:
+    issue_id: str
+    title: str | None = None
+    description: str | None = None
+    state_id: str | None = None
+    priority: int | None = None
+    assignee_id: str | None = None
 
 
 @dataclass(frozen=True)

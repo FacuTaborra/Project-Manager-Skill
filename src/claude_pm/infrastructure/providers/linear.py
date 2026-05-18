@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...domain.models import Issue, IssueDraft, Label, Project, State, Team, User
+from ...domain.models import Issue, IssueDraft, IssueUpdate, Label, Project, State, Team, User
 from ...exceptions import ProviderError
 from ._http import HttpClient
 
@@ -63,6 +63,20 @@ class LinearProvider:
             raise ProviderError(f"Team creation failed: {result}")
         team = result["team"]
         return Team(id=team["id"], name=team["name"], key=team["key"])
+
+    def list_projects(self, team_id: str | None = None) -> list[Project]:
+        data = self._query(
+            "{ projects(first: 50) { nodes { id name state url teams { nodes { id } } } } }"
+        )
+        nodes = (data.get("projects") or {}).get("nodes") or []
+        result = []
+        for n in nodes:
+            if team_id:
+                team_ids = [t["id"] for t in (n.get("teams") or {}).get("nodes", [])]
+                if team_id not in team_ids:
+                    continue
+            result.append(Project(id=n["id"], name=n["name"], state=n.get("state"), url=n.get("url")))
+        return result
 
     def find_projects(self, name_query: str) -> list[Project]:
         data = self._query(
@@ -183,6 +197,39 @@ class LinearProvider:
         result = data.get("issueCreate") or {}
         if not result.get("success"):
             raise ProviderError(f"issueCreate failed: {result}")
+        return _to_issue(result["issue"])
+
+    def update_issue(self, update: IssueUpdate) -> Issue:
+        # Resolve identifier (e.g. FAC-12) → UUID
+        data = self._query(
+            "query($q: String!) { issues(filter: {identifier: {eq: $q}}) { nodes { id } } }",
+            {"q": update.issue_id},
+        )
+        nodes = (data.get("issues") or {}).get("nodes") or []
+        if not nodes:
+            raise ProviderError(f"Issue '{update.issue_id}' not found.")
+        uuid = nodes[0]["id"]
+
+        issue_input: dict[str, Any] = {}
+        if update.title is not None:
+            issue_input["title"] = update.title
+        if update.description is not None:
+            issue_input["description"] = update.description
+        if update.state_id is not None:
+            issue_input["stateId"] = update.state_id
+        if update.priority is not None:
+            issue_input["priority"] = update.priority
+        if update.assignee_id is not None:
+            issue_input["assigneeId"] = update.assignee_id
+
+        data = self._query(
+            "mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) "
+            "{ success issue { id identifier url title state { id name } } } }",
+            {"id": uuid, "input": issue_input},
+        )
+        result = data.get("issueUpdate") or {}
+        if not result.get("success"):
+            raise ProviderError(f"issueUpdate failed: {result}")
         return _to_issue(result["issue"])
 
 

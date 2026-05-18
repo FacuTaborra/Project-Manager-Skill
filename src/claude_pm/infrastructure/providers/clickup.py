@@ -1,0 +1,229 @@
+"""ClickUp adapter — implements the IssueProvider port via ClickUp's REST API v2.
+
+Hierarchy mapping:
+  ClickUp Workspace (Team in API) — auto-discovered, usually one per account
+  ClickUp Space                   → Team in pm skill
+  ClickUp List                    → Project in pm skill
+  ClickUp Task                    → Issue in pm skill
+  ClickUp Status                  → State in pm skill
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ...domain.models import Issue, IssueDraft, IssueUpdate, Label, Project, State, Team, User
+from ...exceptions import ProviderError
+from ._http import HttpClient
+
+CLICKUP_API_BASE = "https://api.clickup.com/api/v2"
+
+# ClickUp task statuses that are considered "done" — excluded from briefing
+_DONE_TYPES = {"done", "closed"}
+
+
+class ClickUpProvider:
+    """Implements IssueProvider against ClickUp's REST API v2.
+
+    ClickUp Personal API Tokens are passed directly in the Authorization header
+    without a Bearer prefix.
+    """
+
+    def __init__(self, api_key: str, *, http: HttpClient | None = None) -> None:
+        self._http = http or HttpClient(
+            url=CLICKUP_API_BASE,
+            headers={"Authorization": api_key},
+        )
+        self._workspace_id: str | None = None
+
+    # -- low-level REST ------------------------------------------------------
+
+    def _get(self, path: str) -> Any:
+        return self._http.get_json(f"{CLICKUP_API_BASE}/{path}")
+
+    def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        client = HttpClient(
+            url=f"{CLICKUP_API_BASE}/{path}",
+            headers=self._http.headers,
+        )
+        result = client.post_json(body)
+        if not isinstance(result, dict):
+            raise ProviderError(f"Unexpected ClickUp response: {type(result).__name__}")
+        return result
+
+    def _workspace(self) -> str:
+        if self._workspace_id:
+            return self._workspace_id
+        data = self._get("team")
+        teams = data.get("teams") or []
+        if not teams:
+            raise ProviderError("No ClickUp workspace found for this API token.")
+        self._workspace_id = teams[0]["id"]
+        return self._workspace_id
+
+    # -- IssueProvider methods -----------------------------------------------
+
+    def viewer_email(self) -> str:
+        data = self._get("user")
+        user = data.get("user") or {}
+        email = user.get("email")
+        if not isinstance(email, str):
+            raise ProviderError("user.email missing in ClickUp response")
+        return email
+
+    def list_teams(self) -> list[Team]:
+        workspace_id = self._workspace()
+        data = self._get(f"team/{workspace_id}/space?archived=false")
+        spaces = data.get("spaces") or []
+        return [Team(id=s["id"], name=s["name"], key=s["id"][:8]) for s in spaces]
+
+    def find_projects(self, name_query: str) -> list[Project]:
+        workspace_id = self._workspace()
+        # Search across all spaces for lists matching name_query.
+        data = self._get(f"team/{workspace_id}/space?archived=false")
+        spaces = data.get("spaces") or []
+        matches: list[Project] = []
+        q = name_query.lower()
+        for space in spaces:
+            for lst in self._lists_in_space(space["id"]):
+                if q in lst.name.lower():
+                    matches.append(lst)
+        return matches
+
+    def list_projects(self, team_id: str | None = None) -> list[Project]:
+        if team_id:
+            return self._lists_in_space(team_id)
+        # Return all lists across all spaces.
+        workspace_id = self._workspace()
+        data = self._get(f"team/{workspace_id}/space?archived=false")
+        spaces = data.get("spaces") or []
+        result: list[Project] = []
+        for space in spaces:
+            result.extend(self._lists_in_space(space["id"]))
+        return result
+
+    def _lists_in_space(self, space_id: str) -> list[Project]:
+        lists: list[Project] = []
+        # Folderless lists
+        data = self._get(f"space/{space_id}/list?archived=false")
+        for lst in data.get("lists") or []:
+            lists.append(Project(id=lst["id"], name=lst["name"]))
+        # Lists inside folders
+        folders = self._get(f"space/{space_id}/folder?archived=false").get("folders") or []
+        for folder in folders:
+            for lst in folder.get("lists") or []:
+                lists.append(Project(id=lst["id"], name=lst["name"]))
+        return lists
+
+    def create_project(self, name: str, team_id: str) -> Project:
+        data = self._post(f"space/{team_id}/list", {"name": name})
+        return Project(id=data["id"], name=data["name"])
+
+    def list_states(self, team_id: str) -> list[State]:
+        lists = self._lists_in_space(team_id)
+        if not lists:
+            return []
+        data = self._get(f"list/{lists[0].id}")
+        statuses = (data.get("statuses") or [])
+        return [State(id=s["id"], name=s["status"]) for s in statuses]
+
+    def list_labels(self, team_id: str) -> list[Label]:
+        return []
+
+    def resolve_user_by_email(self, email: str) -> User | None:
+        workspace_id = self._workspace()
+        data = self._get(f"team/{workspace_id}/member")
+        members = data.get("members") or []
+        for m in members:
+            user = m.get("user") or {}
+            if user.get("email") == email:
+                return User(id=str(user["id"]), email=user["email"], name=user.get("username", ""))
+        return None
+
+    def list_open_issues(self, project_id: str) -> list[Issue]:
+        data = self._get(f"list/{project_id}/task?archived=false&include_closed=false")
+        tasks = data.get("tasks") or []
+        return [_to_issue(t) for t in tasks if not _is_done(t)]
+
+    def search_issues(self, query: str, *, project_id: str | None = None) -> list[Issue]:
+        workspace_id = self._workspace()
+        path = f"team/{workspace_id}/task?query={query}"
+        if project_id:
+            path += f"&list_ids[]={project_id}"
+        data = self._get(path)
+        tasks = data.get("tasks") or []
+        return [_to_issue(t, with_project=True) for t in tasks]
+
+    def create_issue(self, draft: IssueDraft) -> Issue:
+        body: dict[str, Any] = {
+            "name": draft.title,
+            "description": draft.description,
+        }
+        if draft.state_id:
+            body["status"] = draft.state_id
+        if draft.priority is not None:
+            body["priority"] = draft.priority
+        if draft.assignee_id:
+            body["assignees"] = [int(draft.assignee_id)]
+
+        data = self._post(f"list/{draft.project_id}/task", body)
+        return _to_issue(data)
+
+    def update_issue(self, update: IssueUpdate) -> Issue:
+        body: dict[str, Any] = {}
+        if update.title is not None:
+            body["name"] = update.title
+        if update.description is not None:
+            body["description"] = update.description
+        if update.state_id is not None:
+            body["status"] = update.state_id
+        if update.priority is not None:
+            body["priority"] = update.priority
+        if update.assignee_id is not None:
+            body["assignees"] = {"add": [int(update.assignee_id)]}
+
+        data = self._http.put_json(
+            f"{CLICKUP_API_BASE}/task/{update.issue_id}",
+            body,
+        )
+        return _to_issue(data)
+
+    def create_team(self, name: str) -> Team:
+        raise ProviderError("ClickUp does not support creating Spaces via API. Use the ClickUp UI.")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _is_done(task: dict[str, Any]) -> bool:
+    status = (task.get("status") or {})
+    return status.get("type", "").lower() in _DONE_TYPES
+
+
+def _to_issue(task: dict[str, Any], *, with_project: bool = False) -> Issue:
+    status_node = task.get("status") or {}
+    state = State(id=status_node.get("id", ""), name=status_node.get("status", "Unknown"))
+    project: Project | None = None
+    if with_project:
+        lst = task.get("list")
+        if lst:
+            project = Project(id=lst["id"], name=lst["name"])
+    return Issue(
+        identifier=str(task.get("id", "")),
+        title=task.get("name", "(sin título)"),
+        state=state,
+        priority=_map_priority(task.get("priority")),
+        url=task.get("url"),
+        project=project,
+    )
+
+
+def _map_priority(p: Any) -> int:
+    if not p:
+        return 0
+    val = p.get("id") if isinstance(p, dict) else p
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 0

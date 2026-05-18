@@ -56,6 +56,16 @@ class Cache:
         return str(value) if value else None
 
     @property
+    def projects(self) -> list[dict[str, str]]:
+        raw = self.data.get("projects", [])
+        if raw:
+            return [{"id": str(p["id"]), "name": str(p["name"])} for p in raw]
+        # backward compat: wrap single project
+        if self.project_id and self.project_name:
+            return [{"id": self.project_id, "name": self.project_name}]
+        return []
+
+    @property
     def state_ids(self) -> dict[str, str]:
         raw = self.data.get("stateIds", {})
         if not isinstance(raw, dict):
@@ -74,6 +84,24 @@ class Cache:
             "linearTeamId": team_id,
             "linearProjectId": project_id,
             "linearProjectName": project_name,
+            "stateIds": state_ids,
+            "lastRefresh": datetime.now(timezone.utc).isoformat(),
+        }
+        self.save()
+
+    def write_multi(
+        self,
+        *,
+        team_id: str,
+        projects: list[dict[str, str]],
+        state_ids: dict[str, str],
+    ) -> None:
+        first = projects[0] if projects else {}
+        self.data = {
+            "linearTeamId": team_id,
+            "linearProjectId": first.get("id"),
+            "linearProjectName": first.get("name"),
+            "projects": projects,
             "stateIds": state_ids,
             "lastRefresh": datetime.now(timezone.utc).isoformat(),
         }

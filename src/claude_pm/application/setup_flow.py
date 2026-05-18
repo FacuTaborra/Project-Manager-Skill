@@ -38,25 +38,61 @@ class SetupService:
     def ensure(self, options: SetupOptions | None = None) -> Cache:
         opts = options or SetupOptions()
 
-        if (
-            not opts.force
-            and self.cache.team_id
-            and self.cache.project_id
+        cache_complete = (
+            self.cache.team_id
+            and self.cache.projects
             and self.cache.state_ids
             and self.cache.is_fresh()
-        ):
+        )
+        if not opts.force and cache_complete:
             return self.cache
+
+        if self.config.pm_file.projects:
+            return self._setup_from_pm_file(opts)
 
         team_id = self._resolve_team(opts)
         project = self._resolve_project(team_id, opts)
         state_ids = {s.name: s.id for s in self.provider.list_states(team_id)}
-
         self.cache.write(
             team_id=team_id,
             project_id=project.id,
             project_name=project.name,
             state_ids=state_ids,
         )
+        return self.cache
+
+    def _setup_from_pm_file(self, opts: SetupOptions) -> Cache:
+        pm = self.config.pm_file
+        teams = self.provider.list_teams()
+        if not teams:
+            raise PMError("No teams/spaces found in this workspace.")
+
+        if pm.space:
+            matched = [t for t in teams if t.name.lower() == pm.space.lower()]
+            if not matched:
+                available = ", ".join(t.name for t in teams)
+                raise PMError(f"Space '{pm.space}' not found. Available: {available}")
+            team_id = matched[0].id
+        elif len(teams) == 1:
+            team_id = teams[0].id
+        else:
+            raise NeedsChoice(
+                "Multiple teams found and no 'space' set in projects.pm. Pick one and re-run with --team-id <ID>.",
+                {"action": "choose-team", "teams": [_team_dict(t) for t in teams]},
+            )
+
+        available_projects = self.provider.list_projects(team_id)
+        name_to_proj = {p.name.lower(): p for p in available_projects}
+        resolved: list[dict[str, str]] = []
+        for name in pm.projects:
+            proj = name_to_proj.get(name.lower())
+            if not proj:
+                avail = ", ".join(p.name for p in available_projects)
+                raise PMError(f"Project '{name}' not found in space. Available: {avail}")
+            resolved.append({"id": proj.id, "name": proj.name})
+
+        state_ids = {s.name: s.id for s in self.provider.list_states(team_id)}
+        self.cache.write_multi(team_id=team_id, projects=resolved, state_ids=state_ids)
         return self.cache
 
     # -- internals -----------------------------------------------------------

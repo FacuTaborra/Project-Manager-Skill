@@ -127,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Label name (repeatable). Labels must exist in the team.",
     )
+    p_create.add_argument(
+        "--project-id",
+        default=None,
+        help="Project/list ID to create the issue in (required when multiple projects are configured).",
+    )
     p_create.set_defaults(func=create_issue.run)
 
     return parser

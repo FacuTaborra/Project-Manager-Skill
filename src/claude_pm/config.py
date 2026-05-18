@@ -25,8 +25,46 @@ FALLBACK_CACHE_ROOT = Path.home() / ".config" / "claude-pm-skill"
 # Keep old name as alias so external code importing it doesn't break.
 DEFAULT_PAK_FILE = DEFAULT_LINEAR_PAK_FILE
 
-# .env in the repo root (or any parent up to the git root).
+# .env in the repo root
 _REPO_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+
+# Central projects config (one section per repo, gitignored)
+_PROJECTS_FILE = Path(__file__).parent.parent.parent / "projects.pm"
+
+
+def _read_projects_file(repo_name: str) -> "PmFileConfig":
+    """Parse projects.pm and return the section matching repo_name, or empty config."""
+    if not _PROJECTS_FILE.is_file():
+        return PmFileConfig()
+    current: str | None = None
+    fields: dict[str, str] = {}
+    try:
+        for raw in _PROJECTS_FILE.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                if current and current.lower() == repo_name.lower():
+                    break
+                current = line[1:-1].strip()
+                fields = {}
+                continue
+            if current and current.lower() == repo_name.lower() and ":" in line:
+                key, _, val = line.partition(":")
+                fields[key.strip().lower()] = val.strip()
+    except OSError:
+        return PmFileConfig()
+
+    if not fields:
+        return PmFileConfig()
+
+    projects = [p.strip() for p in fields.get("project", "").split(",") if p.strip()]
+    return PmFileConfig(
+        provider=fields.get("provider") or None,
+        space=fields.get("space") or None,
+        projects=projects,
+        label=fields.get("label") or None,
+    )
 
 
 @dataclass
@@ -39,12 +77,21 @@ class Config:
     team_id_override: str | None
     project_id_override: str | None
     provider_name: str = "linear"
+    pm_file: "PmFileConfig" = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.pm_file is None:
+            self.pm_file = PmFileConfig()
 
     @classmethod
     def load(cls, repo_name_override: str | None = None) -> Config:
         from .infrastructure.repo_detect import detect_repo_name
 
-        provider_name = os.environ.get("PM_PROVIDER", "linear")
+        repo_name = repo_name_override or detect_repo_name()
+        pm_file = _read_projects_file(repo_name)
+
+        # Priority: env var > projects.pm > default "linear"
+        provider_name = os.environ.get("PM_PROVIDER") or pm_file.provider or "linear"
 
         if provider_name == "clickup":
             # Repo .env first, then legacy secrets file, then env var override.
@@ -71,8 +118,6 @@ class Config:
         if vault_path is not None and not vault_path.is_dir():
             vault_path = None
 
-        repo_name = repo_name_override or detect_repo_name()
-
         if vault_path is not None:
             cache_path = vault_path / "proyectos" / repo_name / cache_suffix
         else:
@@ -87,6 +132,7 @@ class Config:
             team_id_override=team_id_override,
             project_id_override=project_id_override,
             provider_name=provider_name,
+            pm_file=pm_file,
         )
 
     def require_pak(self) -> str:

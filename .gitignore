@@ -32,6 +32,7 @@ desktop.ini
 !examples/*.env.example
 secrets/
 .linear-cache.json
+projects.pm
 
 # Logs
 *.log

@@ -16,16 +16,21 @@ def run(args: argparse.Namespace) -> int:
     provider = build_provider(config)
     cache = SetupService(provider, load_cache(config), config).ensure()
 
-    project_id = cache.project_id
-    project_name = cache.project_name
-    if not project_id or not project_name:
+    projects = cache.projects
+    if not projects:
         raise PMError("Cache is missing project info. Run `pm setup` first.")
 
     context = build_context(config)
-    briefing = BriefingService(provider, context).generate(
-        project_id=project_id,
-        project_name=project_name,
-        repo_name=config.repo_name,
-    )
-    print_json(briefing_to_dict(briefing))
+    service = BriefingService(provider, context)
+
+    if len(projects) > 1:
+        result = service.generate_multi(projects=projects, repo_name=config.repo_name)
+        print_json(result)
+    else:
+        briefing = service.generate(
+            project_id=projects[0]["id"],
+            project_name=projects[0]["name"],
+            repo_name=config.repo_name,
+        )
+        print_json(briefing_to_dict(briefing))
     return EXIT_OK

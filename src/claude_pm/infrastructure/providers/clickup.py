@@ -108,7 +108,6 @@ class ClickUpProvider:
     def list_projects(self, team_id: str | None = None) -> list[Project]:
         if team_id:
             return self._lists_in_space(team_id)
-        # Return all lists across all spaces.
         workspace_id = self._workspace()
         data = self._get(f"team/{workspace_id}/space?archived=false")
         spaces = data.get("spaces") or []
@@ -217,8 +216,6 @@ class ClickUpProvider:
     def create_team(self, name: str) -> Team:
         raise ProviderError("ClickUp does not support creating Spaces via API. Use the ClickUp UI.")
 
-    # -- Docs (ClickUp v3, not part of IssueProvider) ------------------------
-
     def create_doc(self, title: str, content: str | None = None) -> Doc:
         workspace_id = self._workspace()
         payload: dict[str, Any] = {
@@ -262,12 +259,6 @@ class ClickUpProvider:
                     {"title": title or "Update", "content": content, "content_format": "text/md"},
                 )
         return Doc(id=doc_id, title=doc_data.get("title", ""), url=doc_data.get("url"))
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _is_done(task: dict[str, Any]) -> bool:
     status = task.get("status") or {}

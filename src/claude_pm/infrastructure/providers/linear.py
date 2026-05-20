@@ -24,8 +24,6 @@ class LinearProvider:
             headers={"Authorization": api_key},
         )
 
-    # -- low-level GraphQL ---------------------------------------------------
-
     def _query(self, graphql: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = self._http.post_json({"query": graphql, "variables": variables or {}})
         errors = payload.get("errors")
@@ -36,8 +34,6 @@ class LinearProvider:
         if not isinstance(data, dict):
             raise ProviderError(f"Unexpected response shape: {payload}")
         return data
-
-    # -- IssueProvider methods -----------------------------------------------
 
     def viewer_email(self) -> str:
         data = self._query("{ viewer { email } }")
@@ -146,7 +142,6 @@ class LinearProvider:
         return [_to_issue(n) for n in nodes]
 
     def search_issues(self, query: str, *, project_id: str | None = None) -> list[Issue]:
-        # Linear renamed the field; try modern first, fall back to legacy.
         modern = """
         query($q: String!) {
           searchIssues(term: $q, first: 20) {

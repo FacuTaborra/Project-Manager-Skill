@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import configparser
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .enums import ProviderType
 from .exceptions import ConfigError
 
 
@@ -24,52 +26,49 @@ DEFAULT_LINEAR_PAK_FILE = Path.home() / ".claude" / "secrets" / "linear-pak.env"
 DEFAULT_CLICKUP_PAK_FILE = Path.home() / ".claude" / "secrets" / "clickup-pak.env"
 FALLBACK_CACHE_ROOT = Path.home() / ".config" / "claude-pm-skill"
 
-# Keep old name as alias so external code importing it doesn't break.
-DEFAULT_PAK_FILE = DEFAULT_LINEAR_PAK_FILE
-
-# Resolve symlinks so paths work whether the skill is run directly or via symlink.
 _SKILL_ROOT = Path(__file__).resolve().parent.parent.parent
-
-# .env in the repo root
-_REPO_ENV_FILE = _SKILL_ROOT / ".env"
-
-# Central projects config (one section per repo, gitignored)
 _PROJECTS_FILE = _SKILL_ROOT / "projects.pm"
+_SKILL_ENV_FILE = _SKILL_ROOT / ".env"
 
 
-def _read_projects_file(repo_name: str) -> PmFileConfig:
-    """Parse projects.pm and return the section matching repo_name, or empty config."""
-    if not _PROJECTS_FILE.is_file():
-        return PmFileConfig()
-    current: str | None = None
-    fields: dict[str, str] = {}
-    try:
-        for raw in _PROJECTS_FILE.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("[") and line.endswith("]"):
-                if current and current.lower() == repo_name.lower():
-                    break
-                current = line[1:-1].strip()
-                fields = {}
-                continue
-            if current and current.lower() == repo_name.lower() and ":" in line:
-                key, _, val = line.partition(":")
-                fields[key.strip().lower()] = val.strip()
-    except OSError:
-        return PmFileConfig()
+@dataclass(frozen=True)
+class _ProviderConf:
+    api_key: str
+    pak_env: str
+    default_pak: Path
+    cache_suffix: str
+    team_env: str
+    project_env: str
+    setup_hint: str
 
-    if not fields:
-        return PmFileConfig()
 
-    projects = [p.strip() for p in fields.get("project", "").split(",") if p.strip()]
-    return PmFileConfig(
-        provider=fields.get("provider") or None,
-        space=fields.get("space") or None,
-        projects=projects,
-        label=fields.get("label") or None,
-    )
+_PROVIDER_CONF: dict[ProviderType, _ProviderConf] = {
+    ProviderType.LINEAR: _ProviderConf(
+        api_key="LINEAR_API_KEY",
+        pak_env="LINEAR_PAK_FILE",
+        default_pak=DEFAULT_LINEAR_PAK_FILE,
+        cache_suffix=".linear-cache.json",
+        team_env="LINEAR_TEAM_ID",
+        project_env="LINEAR_PROJECT_ID",
+        setup_hint=(
+            "  See README.md. Create a Personal API Key at https://linear.app/settings/api\n"
+            "  and save it as: LINEAR_API_KEY=lin_api_xxx in the file above."
+        ),
+    ),
+    ProviderType.CLICKUP: _ProviderConf(
+        api_key="CLICKUP_API_KEY",
+        pak_env="CLICKUP_PAK_FILE",
+        default_pak=DEFAULT_CLICKUP_PAK_FILE,
+        cache_suffix=".clickup-cache.json",
+        team_env="CLICKUP_SPACE_ID",
+        project_env="CLICKUP_LIST_ID",
+        setup_hint=(
+            "  Get your token at ClickUp → Settings → Apps → API Token\n"
+            "  and save it as: CLICKUP_API_KEY=pk_xxx in the file above.\n"
+            "  Set PM_PROVIDER=clickup in your environment."
+        ),
+    ),
+}
 
 
 @dataclass
@@ -81,7 +80,7 @@ class Config:
     cache_path: Path
     team_id_override: str | None
     project_id_override: str | None
-    provider_name: str = "linear"
+    provider_name: ProviderType = ProviderType.LINEAR
     pm_file: PmFileConfig = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -95,42 +94,25 @@ class Config:
         repo_name = repo_name_override or detect_repo_name()
         pm_file = _read_projects_file(repo_name)
 
-        # Priority: env var > projects.pm > default "linear"
-        provider_name = os.environ.get("PM_PROVIDER") or pm_file.provider or "linear"
+        provider_name = _parse_provider(os.environ.get("PM_PROVIDER") or pm_file.provider)
 
-        if provider_name == "clickup":
-            # Repo .env first, then legacy secrets file, then env var override.
-            pak = _read_env_key(_REPO_ENV_FILE, "CLICKUP_API_KEY")
-            pak_file = _REPO_ENV_FILE
-            if not pak:
-                pak_file = Path(
-                    os.environ.get("CLICKUP_PAK_FILE", str(DEFAULT_CLICKUP_PAK_FILE))
-                ).expanduser()
-                pak = _read_env_key(pak_file, "CLICKUP_API_KEY")
-            cache_suffix = ".clickup-cache.json"
-            team_id_override = os.environ.get("CLICKUP_SPACE_ID")
-            project_id_override = os.environ.get("CLICKUP_LIST_ID")
-        else:
-            pak = _read_env_key(_REPO_ENV_FILE, "LINEAR_API_KEY")
-            pak_file = _REPO_ENV_FILE
-            if not pak:
-                pak_file = Path(
-                    os.environ.get("LINEAR_PAK_FILE", str(DEFAULT_LINEAR_PAK_FILE))
-                ).expanduser()
-                pak = _read_env_key(pak_file, "LINEAR_API_KEY")
-            cache_suffix = ".linear-cache.json"
-            team_id_override = os.environ.get("LINEAR_TEAM_ID")
-            project_id_override = os.environ.get("LINEAR_PROJECT_ID")
+        conf = _PROVIDER_CONF[provider_name]
+        pak_file = Path.cwd() / ".env"
+        pak = _read_env_key(pak_file, conf.api_key)
+        if not pak:
+            pak_file = _SKILL_ENV_FILE
+            pak = _read_env_key(pak_file, conf.api_key)
+        if not pak:
+            pak_file = Path(os.environ.get(conf.pak_env, str(conf.default_pak))).expanduser()
+            pak = _read_env_key(pak_file, conf.api_key)
 
         vault_env = os.environ.get("CLAUDE_MEMORY_PATH")
         vault_path: Path | None = Path(vault_env).expanduser() if vault_env else DEFAULT_VAULT
         if vault_path is not None and not vault_path.is_dir():
             vault_path = None
 
-        if vault_path is not None:
-            cache_path = vault_path / "proyectos" / repo_name / cache_suffix
-        else:
-            cache_path = FALLBACK_CACHE_ROOT / repo_name / cache_suffix
+        cache_suffix = conf.cache_suffix
+        cache_path = (vault_path / "proyectos" / repo_name / cache_suffix) if vault_path else (FALLBACK_CACHE_ROOT / repo_name / cache_suffix)
 
         return cls(
             pak_file=pak_file,
@@ -138,33 +120,22 @@ class Config:
             vault_path=vault_path,
             repo_name=repo_name,
             cache_path=cache_path,
-            team_id_override=team_id_override,
-            project_id_override=project_id_override,
+            team_id_override=os.environ.get(conf.team_env),
+            project_id_override=os.environ.get(conf.project_env),
             provider_name=provider_name,
             pm_file=pm_file,
         )
 
     def require_pak(self) -> str:
         if not self.pak:
-            if self.provider_name == "clickup":
-                raise ConfigError(
-                    f"ClickUp API key not found at {self.pak_file}.\n"
-                    f"  1. Get your Personal Token at ClickUp → Settings → Apps → API Token\n"
-                    f"  2. Save it as: CLICKUP_API_KEY=pk_xxx in {self.pak_file}\n"
-                    f"  3. Set PM_PROVIDER=clickup in your environment"
-                )
+            hint = _PROVIDER_CONF[self.provider_name].setup_hint
             raise ConfigError(
-                f"Linear API key not found at {self.pak_file}.\n"
-                f"  See README.md for setup. Quick version:\n"
-                f"    1. Create a Personal API Key at https://linear.app/settings/api\n"
-                f"    2. Save it as: LINEAR_API_KEY=lin_api_xxx in {self.pak_file}\n"
-                f"    3. chmod 600 {self.pak_file}"
+                f"{self.provider_name.capitalize()} API key not found at {self.pak_file}.\n{hint}"
             )
         return self.pak
 
 
 def _read_env_key(path: Path, key_name: str) -> str | None:
-    """Parse a `KEY=VALUE` env file and return the value for key_name (or None)."""
     if not path.is_file():
         return None
     prefix = f"{key_name}="
@@ -174,15 +145,37 @@ def _read_env_key(path: Path, key_name: str) -> str | None:
             if not line or line.startswith("#"):
                 continue
             if line.startswith("export "):
-                line = line[len("export ") :]
+                line = line[len("export "):]
             if line.startswith(prefix):
-                value = line.split("=", 1)[1].strip().strip('"').strip("'")
-                return value or None
+                return line.split("=", 1)[1].strip().strip('"').strip("'") or None
     except OSError:
         return None
     return None
 
 
-def _read_pak(path: Path) -> str | None:
-    """Backward-compat wrapper — reads LINEAR_API_KEY."""
-    return _read_env_key(path, "LINEAR_API_KEY")
+def _read_projects_file(repo_name: str) -> PmFileConfig:
+    if not _PROJECTS_FILE.is_file():
+        return PmFileConfig()
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(_PROJECTS_FILE, encoding="utf-8")
+    except OSError:
+        return PmFileConfig()
+    section = next((s for s in parser.sections() if s.lower() == repo_name.lower()), None)
+    if not section:
+        return PmFileConfig()
+    sec = parser[section]
+    projects = [p.strip() for p in sec.get("project", "").split(",") if p.strip()]
+    return PmFileConfig(
+        provider=sec.get("provider") or None,
+        space=sec.get("space") or None,
+        projects=projects,
+        label=sec.get("label") or None,
+    )
+
+def _parse_provider(value: str | None) -> ProviderType:
+    try:
+        return ProviderType(value or "linear")
+    except ValueError:
+        supported = ", ".join(p.value for p in ProviderType)
+        raise ConfigError(f"Unknown provider '{value}'. Supported: {supported}") from None
